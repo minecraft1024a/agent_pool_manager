@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Protocol, cast
 
-from src.app.plugin_system.api import service_api, stream_api
+from src.app.plugin_system.api import service_api
+from src.app.plugin_system.api.log_api import get_logger
 from src.app.plugin_system.api.send_api import send_text
 from src.app.plugin_system.base import BaseCommand, cmd_route
 from src.app.plugin_system.types import PermissionLevel
 
 _SERVICE_SIGNATURE = "agent_pool_manager:service:agent_manager"
+logger = get_logger("agent_pool_manager.command")
 
 
 class _AgentManagerServiceProtocol(Protocol):
@@ -63,54 +65,40 @@ class RunningAgentsCommand(BaseCommand):
         return await self._reply("\n".join(lines))
 
     async def _reply(self, text: str) -> tuple[bool, str]:
-        """确保命令聊天流可路由后发送文本，并检查适配器发送结果。"""
+        """发送命令结果，并记录发送路由和适配器返回值用于排查。"""
+        message = cast(_IncomingMessageProtocol | None, self._message)
+        extra = message.extra if message and isinstance(message.extra, dict) else {}
+        platform = message.platform if message else ""
+        chat_type = message.chat_type if message else ""
+        group_id = str(extra.get("group_id") or "")
+        sender_id = message.sender_id if message else ""
+
+        logger.info(
+            f"准备发送 /agents 回复：stream_id={self.stream_id}, "
+            f"platform={platform}, chat_type={chat_type}, "
+            f"message_id={self.message_id}, group_id={group_id}, "
+            f"sender_id={sender_id}, text_length={len(text)}"
+        )
         try:
-            stream_id = self.stream_id
-            platform: str | None = None
-            reply_to = self.message_id or None
-            message = cast(_IncomingMessageProtocol | None, self._message)
-
-            if message is not None:
-                platform = message.platform or None
-                extra = message.extra if isinstance(message.extra, dict) else {}
-                group_id = str(extra.get("group_id") or "")
-                chat_type = message.chat_type or ("group" if group_id else "private")
-                user_id = message.sender_id if chat_type != "group" else ""
-
-                # 命令在聊天流创建前就会被分发，因此要从原始消息补建流信息。
-                if platform and (group_id if chat_type == "group" else user_id):
-                    stream = await stream_api.get_or_create_stream(
-                        stream_id=stream_id,
-                        platform=platform,
-                        user_id=user_id,
-                        group_id=group_id if chat_type == "group" else "",
-                        chat_type=chat_type,
-                    )
-                    stream_id = stream.stream_id
-
-                    # send_text 查询流信息时会缓存未命中结果；清除旧缓存，
-                    # 让刚补建的群/用户路由信息立即生效。
-                    from src.core.managers.stream_manager import get_stream_manager
-
-                    cache_clear = getattr(
-                        get_stream_manager().get_stream_info, "cache_clear", None
-                    )
-                    if callable(cache_clear):
-                        cache_clear()
-
-            if not stream_id:
-                return False, "发送 Agent 运行状态失败：无法确定当前聊天流。"
-
-            sent = await send_text(
-                text,
-                stream_id=stream_id,
-                platform=platform,
-                reply_to=reply_to,
-            )
+            sent = await send_text(text, stream_id=self.stream_id)
         except Exception as exc:
+            logger.error(
+                f"发送 /agents 回复时抛出异常：stream_id={self.stream_id}, "
+                f"message_id={self.message_id}, error={exc}",
+                exc_info=True,
+            )
             return False, f"发送 Agent 运行状态失败：{exc}"
 
+        logger.info(
+            f"发送 /agents 回复完成：stream_id={self.stream_id}, "
+            f"message_id={self.message_id}, sent={sent}"
+        )
         if not sent:
+            logger.error(
+                f"send_text 返回 False：stream_id={self.stream_id}, "
+                f"platform={platform}, chat_type={chat_type}, "
+                f"group_id={group_id}, sender_id={sender_id}"
+            )
             return False, "发送 Agent 运行状态失败：聊天适配器未确认发送。"
         return True, text
 

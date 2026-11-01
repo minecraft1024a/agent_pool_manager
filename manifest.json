@@ -1,7 +1,7 @@
 {
     "name": "agent_pool_manager",
     "display_name": "Agent 后台管理",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "通过筛选事件将 Agent 从聊天模型工具池隐藏，并提供默认开放、支持参数校验和运行状态查询的后台任务接口。",
     "author": "AI-assisted",
     "license": "MIT",
