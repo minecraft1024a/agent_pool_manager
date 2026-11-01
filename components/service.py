@@ -13,7 +13,8 @@ from uuid import uuid4
 
 from pydantic import TypeAdapter
 
-from src.app.plugin_system.api import agent_api, plugin_api, stream_api
+from src.app.plugin_system.api import agent_api, plugin_api, prompt_api, stream_api
+from src.app.plugin_system.api.log_api import get_logger
 from src.app.plugin_system.base import BaseAgent, BasePlugin, BaseService
 from src.app.plugin_system.types import ChatType
 from src.kernel.concurrency import (
@@ -29,6 +30,9 @@ _MAX_ARGUMENTS_JSON_CHARS = 16_384
 _MAX_ARGUMENT_DEPTH = 12
 _MAX_ARGUMENT_ITEMS = 128
 _MAX_RETAINED_RUNS = 500
+_MAX_REMINDER_RESULT_CHARS = 12_000
+_REMINDER_BUCKET = "actor"
+logger = get_logger("agent_pool_manager.service")
 
 
 @dataclass(slots=True)
@@ -337,6 +341,61 @@ class AgentManagerService(BaseService):
         finally:
             if run is not None:
                 run.finished_at = time.time()
+                self._add_completion_reminder(run)
+
+    def _add_completion_reminder(self, run: AgentRun) -> None:
+        """按配置将 Agent 的最终状态写入来源聊天流的一次性提醒。"""
+        try:
+            if not self._config().agents.completion_reminder_enabled:
+                logger.info(
+                    f"已按配置跳过完成提醒：run_id={run.run_id}, "
+                    f"stream_id={run.stream_id}"
+                )
+                return
+
+            result_text = self._format_reminder_result(run.message)
+            reminder_content = (
+                "后台 Agent 任务已结束。\n"
+                f"Agent：{run.signature}\n"
+                f"运行 ID：{run.run_id}\n"
+                f"状态：{run.status}\n"
+                f"结果或报错：\n{result_text}"
+            )
+            prompt_api.add_stream_reminder(
+                stream_id=run.stream_id,
+                bucket=_REMINDER_BUCKET,
+                name=f"agent_run_{run.run_id}",
+                content=reminder_content,
+                insert_type="dynamic",
+                consume="once",
+            )
+            logger.info(
+                f"已添加 Agent 完成提醒：run_id={run.run_id}, "
+                f"status={run.status}, stream_id={run.stream_id}"
+            )
+        except Exception as exc:
+            logger.error(
+                f"添加 Agent 完成提醒失败：run_id={run.run_id}, "
+                f"stream_id={run.stream_id}, error={exc}",
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _format_reminder_result(result: str | dict[str, Any] | None) -> str:
+        """将 Agent 结果转换成受长度限制的提醒文本。"""
+        if result is None:
+            text = "Agent 未返回内容。"
+        elif isinstance(result, str):
+            text = result or "Agent 返回了空内容。"
+        else:
+            try:
+                text = json.dumps(result, ensure_ascii=False, indent=2, default=str)
+            except (TypeError, ValueError):
+                text = str(result)
+
+        if len(text) > _MAX_REMINDER_RESULT_CHARS:
+            text = text[:_MAX_REMINDER_RESULT_CHARS] + "\n……结果过长，已截断。"
+        return text
 
     @staticmethod
     def _refresh_finished_run(run: AgentRun, task: TaskInfo) -> None:

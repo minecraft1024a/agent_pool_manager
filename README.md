@@ -31,9 +31,10 @@ enabled = true
 allowed_signatures = ["*"]
 max_concurrent_runs = 3
 task_timeout_seconds = 1800
+completion_reminder_enabled = true
 ```
 
-`max_concurrent_runs` 会被限制在 1 到 16，`task_timeout_seconds` 会被限制在 1 到 3600 秒。状态 API 返回当前任务和最近 20 个已结束任务；状态为 `运行中`、`成功`、`异常` 或 `已取消`。成功记录包含 Agent 返回值，异常记录包含错误信息。
+`completion_reminder_enabled` 控制是否将 Agent 最终状态和结果写入启动它的聊天流。提醒使用 `actor` bucket、动态插入并只消费一次；在该聊天流下一次触发支持 `actor` reminder 的模型请求时，模型会看到结果。它不会主动发送一条即时消息。`max_concurrent_runs` 会被限制在 1 到 16，`task_timeout_seconds` 会被限制在 1 到 3600 秒。状态 API 返回当前任务和最近 20 个已结束任务；状态为 `运行中`、`成功`、`异常` 或 `已取消`。成功记录包含 Agent 返回值，异常记录包含错误信息。
 
 ## Service API
 

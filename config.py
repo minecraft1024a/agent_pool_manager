@@ -43,6 +43,13 @@ class AgentPoolManagerConfig(BaseConfig):
             default=1800,
             description="单个后台任务的超时秒数，范围 1 到 3600",
         )
+        completion_reminder_enabled: bool = Field(
+            default=True,
+            description=(
+                "Agent 后台任务结束后，是否通过一次性 system_reminder "
+                "将结果写回启动该任务的聊天流"
+            ),
+        )
 
     plugin: PluginSection = Field(default_factory=PluginSection)
     agents: AgentSection = Field(default_factory=AgentSection)
