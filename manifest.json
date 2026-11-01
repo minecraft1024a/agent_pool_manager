@@ -1,0 +1,62 @@
+{
+  "name": "agent_pool_manager",
+  "display_name": "Agent 后台管理",
+  "version": "1.0.0",
+  "description": "通过筛选事件将 Agent 从聊天模型工具池隐藏，并提供默认开放、支持参数校验和运行状态查询的后台任务接口。",
+  "author": "AI-assisted",
+  "license": "MIT",
+  "dependencies": {
+    "plugins": [],
+    "components": []
+  },
+  "include": [
+    {
+      "component_type": "service",
+      "component_name": "agent_manager",
+      "dependencies": [],
+      "enabled": true
+    },
+    {
+      "component_type": "event_handler",
+      "component_name": "hide_agents_from_model",
+      "dependencies": [],
+      "enabled": true
+    },
+    {
+      "component_type": "tool",
+      "component_name": "list_agents",
+      "dependencies": ["agent_pool_manager:service:agent_manager"],
+      "enabled": true
+    },
+    {
+      "component_type": "tool",
+      "component_name": "agent_runtime_status",
+      "dependencies": ["agent_pool_manager:service:agent_manager"],
+      "enabled": true
+    },
+    {
+      "component_type": "tool",
+      "component_name": "run_agent_background",
+      "dependencies": ["agent_pool_manager:service:agent_manager"],
+      "enabled": true
+    },
+    {
+      "component_type": "command",
+      "component_name": "agents",
+      "dependencies": ["agent_pool_manager:service:agent_manager"],
+      "enabled": true
+    }
+  ],
+  "entry_point": "plugin.py",
+  "min_core_version": "1.2.0-rc.2",
+  "api_version": {
+    "agent_api": "2.0.0",
+    "plugin_api": "1.0.0",
+    "service_api": "1.0.0",
+    "stream_api": "2.0.0"
+  },
+  "python_dependencies": [],
+  "dependencies_required": true,
+  "categories": ["tool"],
+  "tags": ["agent", "background-task", "management"]
+}
